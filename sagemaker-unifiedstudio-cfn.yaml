@@ -1,0 +1,1599 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description:  This template deploys a VPC, with a pair of public and private subnets spread
+  across two Availability Zones. It deploys an internet gateway, with a default
+  route on the public subnets. It deploys a pair of NAT gateways (one in each AZ),
+  and default routes for them in the private subnets.
+Transform: AWS::LanguageExtensions
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: sm-unifiedstudio
+
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+  
+  PublicSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the third Availability Zone
+    Type: String
+    Default: 10.192.12.0/24
+
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+
+  PrivateSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
+    Type: String
+    Default: 10.192.22.0/24
+
+  DomainName:
+    Type: String
+    Description: Name of the DataZone domain.
+    Default: dz-studio
+
+  DatazoneS3Bucket:
+    Type: String
+    Description: S3 location for Tooling environment (e.g s3://amzn-s3-demo-bucket/)
+
+  ProjectName:
+    Description: Name of the project for Sagemaker Unified Studio
+    Type: String
+    Default: unifiedstudio
+
+  UsersList:
+    Description: Users for the project (Enter IDC usernames - comma separated)
+    Type: CommaDelimitedList
+
+  DatabasePassword:
+    NoEcho: true
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters. Must have length 8-41.
+    Description: Database admin account password.
+    MaxLength: '41'
+    MinLength: '8'
+    Type: String
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet3CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ3)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ3)
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway3EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  NatGateway3:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway3EIP.AllocationId
+      SubnetId: !Ref PublicSubnet3
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet3
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ2)
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ3)
+
+  DefaultPrivateRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway3
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      SubnetId: !Ref PrivateSubnet3
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "blog-security-group"
+      GroupDescription: "Security group with a self-referencing inbound rule."
+      VpcId: !Ref VPC
+
+  SecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  DomainExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [sts:AssumeRole, sts:TagSession, sts:SetContext]
+            Effect: Allow
+            Principal:
+              Service: [sagemaker.amazonaws.com, datazone.amazonaws.com]
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+              ForAllValues:StringLike:
+                "aws:TagKeys": "datazone*"
+      ManagedPolicyArns:
+        - !Join
+          - ""
+          - - "arn:"
+            - !Ref AWS::Partition
+            - ":iam::aws:policy/service-role/SageMakerStudioDomainExecutionRolePolicy"
+
+  ServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [sts:AssumeRole]
+            Effect: Allow
+            Principal:
+              Service: [datazone.amazonaws.com]
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+      ManagedPolicyArns:
+        - !Join
+          - ""
+          - - "arn:"
+            - !Ref AWS::Partition
+            - ":iam::aws:policy/service-role/SageMakerStudioDomainServiceRolePolicy"
+
+  AmazonSageMakerProvisioningRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [sts:AssumeRole]
+            Effect: Allow
+            Principal:
+              Service: [datazone.amazonaws.com]
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/SageMakerStudioProjectProvisioningRolePolicy
+
+  AmazonSageMakerManageAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [sts:AssumeRole]
+            Effect: Allow
+            Principal:
+              Service: [datazone.amazonaws.com]
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonDataZoneGlueManageAccessRolePolicy
+        - arn:aws:iam::aws:policy/service-role/AmazonDataZoneRedshiftManageAccessRolePolicy
+        - arn:aws:iam::aws:policy/AmazonDataZoneSageMakerManageAccessRolePolicy
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+
+  Domain:
+    Type: AWS::DataZone::Domain
+    Properties:
+      Name: !Ref DomainName
+      Description: "UnifiedStudio SM Domain"
+      DomainExecutionRole: !GetAtt DomainExecutionRole.Arn
+      DomainVersion: "V2"
+      ServiceRole: !GetAtt ServiceRole.Arn
+      SingleSignOn: {
+        Type: "IAM_IDC",
+        UserAssignment: "AUTOMATIC"
+      }
+
+  LakehouseCatalog:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "LakehouseCatalog"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: { }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+  AmazonBedrockGuardrail:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockGuardrail"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+  MLExperiments:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "MLExperiments"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  Tooling:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "Tooling"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  RedshiftServerless:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "RedshiftServerless"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  EmrServerless:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "EmrServerless"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  Workflows:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "Workflows"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockPrompt:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockPrompt"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  DataLake:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "DataLake"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockEvaluation:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockEvaluation"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockKnowledgeBase:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockKnowledgeBase"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  PartnerApps:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "PartnerApps"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockChatAgent:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockChatAgent"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockFunction:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockFunction"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+
+  AmazonBedrockFlow:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "AmazonBedrockFlow"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+  EmrOnEc2:
+    Type: AWS::DataZone::EnvironmentBlueprintConfiguration
+    Properties:
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentBlueprintIdentifier: "EmrOnEc2"
+      ManageAccessRoleArn: !GetAtt AmazonSageMakerManageAccessRole.Arn
+      ProvisioningRoleArn: !GetAtt AmazonSageMakerProvisioningRole.Arn
+      RegionalParameters: [
+        {
+          Region: !Ref 'AWS::Region',
+          Parameters: {
+            "S3Location": !Ref DatazoneS3Bucket,
+            "Subnets": !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
+            "VpcId": !Ref VPC
+          }
+        }
+      ]
+      EnabledRegions: [ !Ref 'AWS::Region' ]
+
+  SQLAnalytics:
+    Type: AWS::DataZone::ProjectProfile
+    Properties:
+      Name: "SQL analytics"
+      Description: "Analyze your data in SageMaker Lakehouse using SQL"
+      DomainIdentifier: !GetAtt Domain.Id
+      Status: "ENABLED"
+      EnvironmentConfigurations:
+        - Name: "Tooling"
+          EnvironmentBlueprintId: !GetAtt Tooling.EnvironmentBlueprintId
+          Description: "Configuration for the Tooling"
+          DeploymentMode: "ON_CREATE"
+          DeploymentOrder: 0
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: "enableSpaces"
+                Value: "false"
+                IsEditable: false
+              - Name: "maxEbsVolumeSize"
+                IsEditable: false
+              - Name: "idleTimeoutInMinutes"
+                IsEditable: false
+              - Name: "lifecycleManagement"
+                IsEditable: false
+              - Name: "enableNetworkIsolation"
+                IsEditable: false
+              - Name: "gitConnectionArn"
+        - Name: "Lakehouse Database"
+          EnvironmentBlueprintId: !GetAtt DataLake.EnvironmentBlueprintId
+          Description: "Creates databases in SageMaker Lakehouse for S3 tables and Athena"
+          DeploymentMode: "ON_CREATE"
+          DeploymentOrder: 1
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: "glueDbName"
+                Value: "glue_db"
+                IsEditable: true
+        - Name: "Redshift Serverless"
+          EnvironmentBlueprintId: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+          Description: "Creates an Amazon Redshift Serverless workgroup"
+          DeploymentMode: "ON_CREATE"
+          DeploymentOrder: 1
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: "redshiftDbName"
+                Value: "dev"
+                IsEditable: true
+              - Name: "connectToRMSCatalog"
+                Value: "true"
+                IsEditable: false
+              - Name: "redshiftMaxCapacity"
+                Value: "512"
+                IsEditable: false
+        - Name: "OnDemand Redshift Serverless"
+          EnvironmentBlueprintId: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+          Description: "Additional Redshift Serverless workgroup"
+          DeploymentMode: "ON_DEMAND"
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: "redshiftDbName"
+                Value: "dev"
+                IsEditable: true
+              - Name: "redshiftMaxCapacity"
+                Value: "512"
+                IsEditable: true
+              - Name: "redshiftWorkgroupName"
+                Value: "redshift-serverless-workgroup"
+                IsEditable: true
+              - Name: "redshiftBaseCapacity"
+                Value: "128"
+                IsEditable: true
+              - Name: "connectionName"
+                Value: "redshift.serverless"
+                IsEditable: true
+              - Name: "connectToRMSCatalog"
+                Value: "false"
+                IsEditable: false
+        - Name: "OnDemand Catalog for RMS"
+          EnvironmentBlueprintId: !GetAtt LakehouseCatalog.EnvironmentBlueprintId
+          Description: "Catalog for Redshift Managed Storage"
+          DeploymentMode: "ON_DEMAND"
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: "catalogName"
+                IsEditable: true
+              - Name: "catalogDescription"
+                Value: "RMS catalog"
+                IsEditable: true
+
+
+  AllCapabilitiesProjectProfile:
+    Type: AWS::DataZone::ProjectProfile
+    Properties:
+      Name: 'All capabilities'
+      Description: 'Analyze data and build machine learning and generative AI models and applications powered by Amazon Bedrock, Amazon EMR, AWS Glue, Amazon Athena, Amazon SageMaker AI and Amazon SageMaker Lakehouse'
+      Status: 'ENABLED'
+      DomainIdentifier: !GetAtt Domain.Id
+      EnvironmentConfigurations:
+        - Name: 'Tooling'
+          EnvironmentBlueprintId: !GetAtt Tooling.EnvironmentBlueprintId
+          Description: 'Configuration for the Tooling'
+          DeploymentOrder: 0
+          DeploymentMode: 'ON_CREATE'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'enableSpaces'
+                Value: 'true'
+                IsEditable: false
+              - Name: 'maxEbsVolumeSize'
+                IsEditable: false
+              - Name: 'idleTimeoutInMinutes'
+                IsEditable: false
+              - Name: 'lifecycleManagement'
+                IsEditable: false
+              - Name: 'enableNetworkIsolation'
+                IsEditable: false
+              - Name: 'enableAmazonBedrockPermissions'
+                Value: 'true'
+                IsEditable: false
+              - Name: 'gitConnectionArn'
+
+        - Name: 'Lakehouse Database'
+          EnvironmentBlueprintId: !GetAtt DataLake.EnvironmentBlueprintId
+          Description: 'Creates databases in Amazon SageMaker Lakehouse for storing tables in S3 and Amazon Athena resources for your SQL workloads'
+          DeploymentOrder: 1
+          DeploymentMode: 'ON_CREATE'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'glueDbName'
+                Value: 'glue_db'
+                IsEditable: true
+
+        - Name: 'RedshiftServerless'
+          EnvironmentBlueprintId: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+          Description: 'Creates an Amazon Redshift Serverless workgroup for your SQL workloads'
+          DeploymentOrder: 1
+          DeploymentMode: 'ON_CREATE'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'redshiftDbName'
+                Value: 'dev'
+                IsEditable: true
+              - Name: 'connectToRMSCatalog'
+                Value: 'true'
+                IsEditable: false
+              - Name: 'redshiftMaxCapacity'
+                Value: '512'
+                IsEditable: false
+
+        - Name: 'OnDemand Workflows'
+          EnvironmentBlueprintId: !GetAtt Workflows.EnvironmentBlueprintId
+          Description: 'Enables you to create Airflow workflows to be executed on MWAA environments'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'environmentClass'
+                Value: 'mw1.micro'
+                IsEditable: false
+
+        - Name: 'OnDemand MLExperiments'
+          EnvironmentBlueprintId: !GetAtt MLExperiments.EnvironmentBlueprintId
+          Description: 'Enables you to create Amazon Sagemaker mlflow in the project'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'mlflowTrackingServerSize'
+                Value: 'Small'
+                IsEditable: true
+              - Name: 'mlflowTrackingServerName'
+                Value: 'tracking-server'
+                IsEditable: true
+
+        - Name: 'OnDemand EMR on EC2 Memory-Optimized'
+          EnvironmentBlueprintId: !GetAtt EmrOnEc2.EnvironmentBlueprintId
+          Description: 'Enables you to create an additional memory optimized Amazon EMR on Amazon EC2'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'emrRelease'
+                Value: 'emr-7.5.0'
+                IsEditable: true
+              - Name: 'connectionDescription'
+                Value: 'Spark connection for EMR EC2 cluster'
+                IsEditable: true
+              - Name: 'clusterName'
+                Value: 'emr-ec2-cluster'
+                IsEditable: true
+              - Name: 'primaryInstanceType'
+                Value: 'r6g.xlarge'
+                IsEditable: true
+              - Name: 'coreInstanceType'
+                Value: 'r6g.xlarge'
+                IsEditable: true
+              - Name: 'taskInstanceType'
+                Value: 'r6g.xlarge'
+                IsEditable: true
+
+        - Name: 'OnDemand EMR on EC2 General-Purpose'
+          EnvironmentBlueprintId: !GetAtt EmrOnEc2.EnvironmentBlueprintId
+          Description: 'Enables you to create an additional general purpose Amazon EMR on Amazon EC2'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'emrRelease'
+                Value: 'emr-7.5.0'
+                IsEditable: true
+              - Name: 'connectionDescription'
+                Value: 'Spark connection for EMR EC2 cluster'
+                IsEditable: true
+              - Name: 'clusterName'
+                Value: 'emr-ec2-cluster'
+                IsEditable: true
+              - Name: 'primaryInstanceType'
+                Value: 'm6g.xlarge'
+                IsEditable: true
+              - Name: 'coreInstanceType'
+                Value: 'm6g.xlarge'
+                IsEditable: true
+              - Name: 'taskInstanceType'
+                Value: 'm6g.xlarge'
+                IsEditable: true
+
+        - Name: 'OnDemand RedshiftServerless'
+          EnvironmentBlueprintId: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+          Description: 'Enables you to create an additional Amazon Redshift Serverless workgroup for your SQL workloads'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'redshiftDbName'
+                Value: 'dev'
+                IsEditable: true
+              - Name: 'redshiftMaxCapacity'
+                Value: '512'
+                IsEditable: true
+              - Name: 'redshiftWorkgroupName'
+                Value: 'redshift-serverless-workgroup'
+                IsEditable: true
+              - Name: 'redshiftBaseCapacity'
+                Value: '128'
+                IsEditable: true
+              - Name: 'connectionName'
+                Value: 'redshift.serverless'
+                IsEditable: true
+              - Name: 'connectToRMSCatalog'
+                Value: 'false'
+                IsEditable: false
+
+        - Name: 'OnDemand Catalog for Redshift Managed Storage'
+          EnvironmentBlueprintId: !GetAtt LakehouseCatalog.EnvironmentBlueprintId
+          Description: 'Enables you to create additional catalogs in Amazon SageMaker Lakehouse for storing data in Redshift Managed Storage'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'catalogName'
+                IsEditable: true
+              - Name: 'catalogDescription'
+                Value: 'RMS catalog'
+                IsEditable: true
+
+        - Name: 'OnDemand EMRServerless'
+          EnvironmentBlueprintId: !GetAtt EmrServerless.EnvironmentBlueprintId
+          Description: 'Enables you to create an additional Amazon EMR Serverless application for running Spark workloads'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+          ConfigurationParameters:
+            ParameterOverrides:
+              - Name: 'connectionDescription'
+                IsEditable: true
+              - Name: 'connectionName'
+                IsEditable: true
+              - Name: 'releaseLabel'
+                Value: 'emr-7.5.0'
+                IsEditable: true
+
+        - Name: 'Amazon Bedrock Chat Agent'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockChatAgent.EnvironmentBlueprintId
+          Description: 'A configurable generative AI app with a conversational interface'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Knowledge Base'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockKnowledgeBase.EnvironmentBlueprintId
+          Description: 'A reusable component for providing your own data to apps'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Guardrail'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockGuardrail.EnvironmentBlueprintId
+          Description: 'A reusable component for implementing safeguards on model outputs'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Function'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockFunction.EnvironmentBlueprintId
+          Description: 'A reusable component for including dynamic information in model outputs'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Flow'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockFlow.EnvironmentBlueprintId
+          Description: 'A configurable generative AI workflow'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Prompt'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockPrompt.EnvironmentBlueprintId
+          Description: 'A reusable set of inputs that guide model outputs'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+        - Name: 'Amazon Bedrock Evaluation'
+          EnvironmentBlueprintId: !GetAtt AmazonBedrockEvaluation.EnvironmentBlueprintId
+          Description: 'Enables evaluation features to compare Bedrock models'
+          DeploymentMode: 'ON_DEMAND'
+          AwsAccount:
+            AwsAccountId: !Ref "AWS::AccountId"
+          AwsRegion:
+            RegionName: !Ref "AWS::Region"
+
+  DataZoneGrantPolicyLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+          RoleName: DataZoneGrantPolicyLambdaRole
+          AssumeRolePolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                  - Effect: Allow
+                    Principal:
+                        Service: lambda.amazonaws.com
+                    Action: sts:AssumeRole
+          Policies:
+              - PolicyName: DataZoneGrantPolicyPermissions
+                PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                        - Effect: Allow
+                          Action:
+                              - datazone:AddPolicyGrant
+                          Resource: "*"
+                        - Effect: Allow
+                          Action:
+                              - logs:CreateLogGroup
+                              - logs:CreateLogStream
+                              - logs:PutLogEvents
+                          Resource: "*"
+
+  DataZoneGrantPolicyFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+          FunctionName: DataZoneGrantPolicyFunction
+          Handler: index.handler
+          Role: !GetAtt DataZoneGrantPolicyLambdaRole.Arn
+          Runtime: python3.12
+          Timeout: 60
+          Code:
+              ZipFile: |
+                  import boto3
+                  import cfnresponse
+                  import traceback
+                  
+                  def handler(event, context):
+                      print("Received event:", event)
+                      props = event['ResourceProperties']
+                      domain_id = props['DomainId']
+                      root_domain_unit_id = props['RootDomainUnitId']
+                      account_id = props['AccountId']
+                      blueprint_id = props.get('BlueprintId', '').strip()
+                      project_profile_id1 = props.get('ProjectProfileId1', '').strip()
+                      project_profile_id2 = props.get('ProjectProfileId2', '').strip()
+
+                      try:
+                          if event['RequestType'] in ['Create', 'Update', 'Delete']:
+                              datazone = boto3.client('datazone')
+                  
+                              if blueprint_id:
+                                  print(f"Granting CREATE_ENVIRONMENT_FROM_BLUEPRINT for {blueprint_id}")
+                                  datazone.add_policy_grant(
+                                      domainIdentifier=domain_id,
+                                      entityType="EnvironmentBlueprintConfiguration",
+                                      entityIdentifier=f"{account_id}:{blueprint_id}",
+                                      policyType="CREATE_ENVIRONMENT_FROM_BLUEPRINT",
+                                      principal={
+                                          "project": {
+                                              "projectGrantFilter": {
+                                                  "domainUnitFilter": {
+                                                      "domainUnit": root_domain_unit_id,
+                                                      "includeChildDomainUnits": True
+                                                  }
+                                              },
+                                              "projectDesignation": "CONTRIBUTOR"
+                                          }
+                                      },
+                                      detail={
+                                          "createEnvironmentFromBlueprint": {}
+                                      }
+                                  )
+                  
+                              if project_profile_id1:
+                                  print(f"Granting CREATE_PROJECT_FROM_PROJECT_PROFILE for {project_profile_id1}")
+                                  datazone.add_policy_grant(
+                                      domainIdentifier=domain_id,
+                                      entityType="DomainUnit",
+                                      entityIdentifier=root_domain_unit_id,
+                                      policyType="CREATE_PROJECT_FROM_PROJECT_PROFILE",
+                                      principal={
+                                          "user": {
+                                              "allUsersGrantFilter": {}
+                                          }
+                                      },
+                                      detail={
+                                          "createProjectFromProjectProfile": {
+                                              "includeChildDomainUnits": True,
+                                              "projectProfiles": [ project_profile_id1 , project_profile_id2 ]
+                                          }
+                                      }
+                                  )
+                  
+                          # Always send SUCCESS on Delete or successful create/update
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  
+                      except Exception as e:
+                          print("Exception occurred:", str(e))
+                          traceback.print_exc()
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {}, str(e))
+
+
+  AddPolicyGrantForLakehouseCatalog:
+      Type: Custom::DataZoneGrant
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt LakehouseCatalog.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockGuardrail:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForLakehouseCatalog
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockGuardrail.EnvironmentBlueprintId
+
+  AddPolicyGrantForMLExperiments:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockGuardrail
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt MLExperiments.EnvironmentBlueprintId
+
+  AddPolicyGrantForTooling:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForMLExperiments
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt Tooling.EnvironmentBlueprintId
+
+  AddPolicyGrantForRedshiftServerless:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForTooling
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+
+  AddPolicyGrantForEmrServerless:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForRedshiftServerless
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt EmrServerless.EnvironmentBlueprintId
+
+  AddPolicyGrantForWorkflows:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForEmrServerless
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt Workflows.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockPrompt:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForWorkflows
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockPrompt.EnvironmentBlueprintId
+
+  AddPolicyGrantForDataLake:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockPrompt
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt DataLake.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockEvaluation:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForDataLake
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockEvaluation.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockKnowledgeBase:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockEvaluation
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockKnowledgeBase.EnvironmentBlueprintId
+
+  AddPolicyGrantForPartnerApps:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockKnowledgeBase
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt PartnerApps.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockChatAgent:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForPartnerApps
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockChatAgent.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockFunction:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockChatAgent
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockFunction.EnvironmentBlueprintId
+
+  AddPolicyGrantForAmazonBedrockFlow:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockFunction
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt AmazonBedrockFlow.EnvironmentBlueprintId
+
+  AddPolicyGrantForEmrOnEc2:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForAmazonBedrockFlow
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          BlueprintId: !GetAtt EmrOnEc2.EnvironmentBlueprintId
+
+  AddPolicyGrantForSQLAnalyticsNAllCapabilitiesProjectProfile:
+      Type: Custom::DataZoneGrant
+      DependsOn: AddPolicyGrantForEmrOnEc2
+      Properties:
+          ServiceToken: !GetAtt DataZoneGrantPolicyFunction.Arn
+          DomainId: !GetAtt Domain.Id
+          RootDomainUnitId: !GetAtt Domain.RootDomainUnitId
+          AccountId: !Ref AWS::AccountId
+          ProjectProfileId1: !GetAtt SQLAnalytics.Id
+          ProjectProfileId2: !GetAtt AllCapabilitiesProjectProfile.Id
+
+  Project:
+    Type: AWS::DataZone::Project
+    DependsOn: AddPolicyGrantForSQLAnalyticsNAllCapabilitiesProjectProfile
+    Properties:
+      Description: "unified studio"
+      DomainIdentifier: !GetAtt Domain.Id
+      Name: !Ref ProjectName
+      ProjectProfileId: !GetAtt AllCapabilitiesProjectProfile.Id
+      UserParameters:
+        - EnvironmentConfigurationName: Lakehouse Database
+          EnvironmentParameters:
+            - Name: glueDbName
+              Value: glue_override
+        - EnvironmentConfigurationName: Redshift Serverless
+          EnvironmentParameters:
+            - Name: redshiftDbName
+              Value: rs_db_override
+
+  "Fn::ForEach::Users":
+    - User
+    - !Ref UsersList
+    - "${User}ProjectMembership":
+        Type: "AWS::DataZone::ProjectMembership"
+        Properties:
+          DomainIdentifier: !GetAtt Domain.Id
+          ProjectIdentifier: !GetAtt Project.Id
+          Member:
+            UserIdentifier: !Ref User
+          Designation: "PROJECT_OWNER"
+
+  AuroraDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: AuroraDBSecurityGroup
+      GroupDescription: Aurora Database Security Group
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+  AuroraDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: MSK Blog DB parameter group
+      Family: aurora-mysql8.0
+      Parameters:
+        max_connections: 300
+  AuroraDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: CloudFormation Sample Aurora Cluster Parameter Group
+      Family: aurora-mysql8.0
+      Parameters:
+        time_zone: US/Eastern
+        binlog_format: ROW
+        binlog_checksum: NONE
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    DependsOn:
+      - DatabaseSubnetGroup
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: 8.0.mysql_aurora.3.08.2
+      StorageEncrypted: true
+      MasterUsername: master
+      MasterUserPassword: !Ref DatabasePassword
+      DatabaseName: employeedb
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBClusterParameterGroupName: !Ref AuroraDBClusterParameterGroup
+      VpcSecurityGroupIds:
+        - !Ref AuroraDBSecurityGroup
+  AuroraDB:
+    Type: AWS::RDS::DBInstance
+    DependsOn: AuroraCluster
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.r5.large
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref AuroraDBParameterGroup
+      PubliclyAccessible: 'false'
+      DBInstanceIdentifier: !Join
+        - '-'
+        - - blog-db
+          - employeedb
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+Outputs:
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref VPC
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]]
+
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3  ]]
+
+  SecurityGroupIngress:
+    Description: Security group with self-referencing inbound rule
+    Value: !Ref SecurityGroupIngress
+
+  DataZoneDomainId:
+    Description: "UnifiedStudio SM Domain"
+    Value: !GetAtt Domain.Id
+
+  DataZoneDomainArn:
+    Description: "UnifiedStudio SM Domain Arn"
+    Value: !GetAtt Domain.Arn
+
+  DataZoneRootDomainUnitId:
+    Description: "UnifiedStudio SM RootDomain UnitId"
+    Value: !GetAtt Domain.RootDomainUnitId
+
+  SageMakerStudioDomainExecutionRoleArn:
+    Description: "SageMaker Studio Domain Execution Role Arn"
+    Value: !GetAtt DomainExecutionRole.Arn
+
+  SageMakerStudioDomainServiceRolePolicyArn:
+    Description: "SageMaker Studio Domain Service Role Arn"
+    Value: !GetAtt ServiceRole.Arn
+
+  SageMakerStudioProjectProvisioningRoleArn:
+    Description: "SageMaker Studio Project Provisioning Role Arn"
+    Value: !GetAtt AmazonSageMakerProvisioningRole.Arn
+
+  AmazonSageMakerManageAccessRoleArn:
+    Description: "Amazon SageMaker Manage Access Role Arn"
+    Value: !GetAtt AmazonSageMakerManageAccessRole.Arn
+
+  LakehouseCatalogId:
+    Value: !GetAtt LakehouseCatalog.EnvironmentBlueprintId
+
+  AmazonBedrockGuardrailId:
+    Value: !GetAtt AmazonBedrockGuardrail.EnvironmentBlueprintId
+
+  MLExperimentsId:
+    Value: !GetAtt MLExperiments.EnvironmentBlueprintId
+
+  ToolingId:
+    Value: !GetAtt Tooling.EnvironmentBlueprintId
+
+  RedshiftServerlessId:
+    Value: !GetAtt RedshiftServerless.EnvironmentBlueprintId
+
+  EmrServerlessId:
+    Value: !GetAtt EmrServerless.EnvironmentBlueprintId
+
+  WorkflowsId:
+    Value: !GetAtt Workflows.EnvironmentBlueprintId
+
+  AmazonBedrockPromptId:
+    Value: !GetAtt AmazonBedrockPrompt.EnvironmentBlueprintId
+
+  DataLakeId:
+    Value: !GetAtt DataLake.EnvironmentBlueprintId
+
+  AmazonBedrockEvaluationId:
+    Value: !GetAtt AmazonBedrockEvaluation.EnvironmentBlueprintId
+
+  AmazonBedrockKnowledgeBaseId:
+    Value: !GetAtt AmazonBedrockKnowledgeBase.EnvironmentBlueprintId
+
+  PartnerAppsId:
+    Value: !GetAtt PartnerApps.EnvironmentBlueprintId
+
+  AmazonBedrockChatAgentId:
+    Value: !GetAtt AmazonBedrockChatAgent.EnvironmentBlueprintId
+
+  AmazonBedrockFunctionId:
+    Value: !GetAtt AmazonBedrockFunction.EnvironmentBlueprintId
+
+  AmazonBedrockFlowId:
+    Value: !GetAtt AmazonBedrockFlow.EnvironmentBlueprintId
+
+  EmrOnEc2Id:
+    Value: !GetAtt EmrOnEc2.EnvironmentBlueprintId
+
+  SQLAnalyticsProfileId:
+    Value: !GetAtt SQLAnalytics.Id
+
+  AllCapabilitiesProjectProfileId:
+    Value: !GetAtt AllCapabilitiesProjectProfile.Id
+
+  UnifiedStudioProjectID:
+    Description: "Unified Studio Project ID"
+    Value: !GetAtt Project.Id
+
+  DBClusterEndpoint:
+    Description: The endpoint of the RDS DB Cluster
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+  DBClusterPort:
+    Description: The port of the RDS DB Cluster
+    Value: !GetAtt AuroraCluster.Endpoint.Port
+  DBClusterReadEndpoint:
+    Description: The read endpoint of the RDS DB Cluster
+    Value: !GetAtt AuroraCluster.ReadEndpoint.Address
