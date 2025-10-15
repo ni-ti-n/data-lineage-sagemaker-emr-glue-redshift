@@ -1,0 +1,6 @@
+EmployeeID,Name,Department,Role,HireDate,Salary,PerformanceRating,Shift,Location
+E1000,Employee_0,Quality Control,Operator,2021-08-08,33002.0,1,Night,Plant C
+E1001,Employee_1,Maintenance,Supervisor,2015-12-31,69813.76,5,Evening,Plant B
+E1002,Employee_2,Production,Technician,2015-06-18,46753.32,1,Evening,Plant A
+E1003,Employee_3,Admin,Supervisor,2020-10-13,52853.4,5,Night,Plant A
+E1004,Employee_4,Quality Control,Manager,2023-09-21,55645.27,5,Evening,Plant A
